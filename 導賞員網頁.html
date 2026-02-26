@@ -3,53 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>導賞員專用介面</title>
-    <!-- 引入 Agora Web SDK -->
-    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <title>導賞員中控台</title>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; background-color: #f0f8ff; }
-        button { padding: 15px 30px; font-size: 20px; background-color: #ff4757; color: white; border: none; border-radius: 8px; cursor: pointer; }
-        #status { margin-top: 20px; font-size: 18px; color: #333; }
+        body { font-family: sans-serif; text-align: center; padding: 30px; background-color: #f0f8ff; }
+        button { padding: 15px; font-size: 18px; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 10px; width: 90%; max-width: 350px; display: block; margin-left: auto; margin-right: auto; }
+
+        /* 按鈕顏色定義 */
+        #startBtn { background-color: #2ed573; } /* 綠色：開始 */
+        #pauseBtn { background-color: #ffa502; display: none; } /* 橘色：暫停 */
+        #resumeBtn { background-color: #1e90ff; display: none; } /* 藍色：恢復 */
+        #endBtn { background-color: #ff4757; display: none; } /* 紅色：結束 */
+
+        #status { margin-top: 20px; font-size: 20px; color: #333; font-weight: bold; }
+        .control-panel { border: 1px solid #ccc; padding: 20px; border-radius: 10px; background: white; max-width: 400px; margin: 0 auto; }
     </style>
 </head>
 <body>
 
-    <h1>🎙️ 導賞員廣播站</h1>
-    <button id="startBtn">開始導覽 (點擊開啟麥克風)</button>
-    <div id="status">狀態：尚未開始</div>
+    <h1>🎙️ 導賞員中控台</h1>
 
-    <script>
-        // 填入你的 App ID
-        const APP_ID = "c553229d8402445a9a5262d2d573161d";
-        const CHANNEL_NAME = "museum_tour_01"; // 你可以自訂房間名稱
-        const TOKEN = null; // 測試模式下填 null 即可
+    <div class="control-panel">
+        <div id="status">狀態：準備就緒 (離線)</div>
+        <hr>
+        <!-- 按鈕群組 -->
+        <button id="startBtn">🔴 開始導覽 (上線)</button>
+        <button id="pauseBtn">️🔇 暫停麥克風 (喝水模式)</button>
+        <button id="resumeBtn">🎤 恢復說話</button>
+        <button id="endBtn">⏹️ 結束導覽 (全員斷線)</button>
+    </div>
 
-        // 建立連線客戶端，設定為「直播模式」
+    <!-- 引入 SDK -->
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, onDisconnect } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // Firebase 設定
+        const firebaseConfig = {
+          apiKey: "AIzaSyDMSZ5dOERrdwDhCcYozn_XbE-7T3Om3ss",
+          authDomain: "audio-guide-signal.firebaseapp.com",
+          databaseURL: "https://audio-guide-signal-default-rtdb.firebaseio.com",
+          projectId: "audio-guide-signal",
+          storageBucket: "audio-guide-signal.firebasestorage.app",
+          messagingSenderId: "173221122075",
+          appId: "1:173221122075:web:a8214abe2d2239a20028be",
+          measurementId: "G-NJ8SX0K49Q"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // Agora 設定
+        const APP_ID = "b9b887f6351c4b9ab067ba7778c6b280";
+        const CHANNEL_NAME = "museum_tour_01";
+
+        const tourStatusRef = ref(db, 'tours/' + CHANNEL_NAME + '/isActive');
         const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
         let localAudioTrack;
 
-        document.getElementById("startBtn").addEventListener("click", async () => {
+        // UI 元素
+        const startBtn = document.getElementById("startBtn");
+        const pauseBtn = document.getElementById("pauseBtn");
+        const resumeBtn = document.getElementById("resumeBtn");
+        const endBtn = document.getElementById("endBtn");
+        const statusText = document.getElementById("status");
+
+        // --- 1. 按下【開始導覽】 ---
+        startBtn.addEventListener("click", async () => {
             try {
-                // 1. 設定角色為主播 (host)
+                // Agora 連線
                 await client.setClientRole("host");
-
-                // 2. 加入房間
-                await client.join(APP_ID, CHANNEL_NAME, TOKEN, null);
-
-                // 3. 開啟麥克風收音
+                await client.join(APP_ID, CHANNEL_NAME, null, null);
                 localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
-
-                // 4. 將聲音發佈到房間給所有人聽
                 await client.publish([localAudioTrack]);
 
-                document.getElementById("status").innerText = "狀態：🟢 正在廣播中，請對著麥克風說話！";
-                document.getElementById("startBtn").disabled = true;
-                document.getElementById("startBtn").style.backgroundColor = "#2ed573";
-                document.getElementById("startBtn").innerText = "廣播進行中";
+                // Firebase 開燈
+                set(tourStatusRef, true);
+                onDisconnect(tourStatusRef).set(false);
+
+                // 更新 UI
+                statusText.innerText = "狀態：🟢 廣播中 (Live)";
+                startBtn.style.display = "none";
+                pauseBtn.style.display = "block";
+                endBtn.style.display = "block";
 
             } catch (error) {
-                console.error("發生錯誤:", error);
-                alert("啟動失敗，請檢查主控台錯誤訊息。");
+                console.error(error);
+                alert("啟動失敗");
+            }
+        });
+
+        // --- 2. 按下【暫停麥克風】(不扣團員，只靜音) ---
+        pauseBtn.addEventListener("click", async () => {
+            if (localAudioTrack) {
+                // 關鍵指令：setEnabled(false) 代表靜音，但連線還在
+                await localAudioTrack.setEnabled(false);
+
+                statusText.innerText = "狀態：🤐 已暫停 (靜音中)";
+                pauseBtn.style.display = "none";
+                resumeBtn.style.display = "block";
+            }
+        });
+
+        // --- 3. 按下【恢復說話】 ---
+        resumeBtn.addEventListener("click", async () => {
+            if (localAudioTrack) {
+                // 關鍵指令：setEnabled(true) 代表恢復聲音
+                await localAudioTrack.setEnabled(true);
+
+                statusText.innerText = "狀態：🟢 廣播中 (Live)";
+                resumeBtn.style.display = "none";
+                pauseBtn.style.display = "block";
+            }
+        });
+
+        // --- 4. 按下【結束導覽】(全員斷線) ---
+        endBtn.addEventListener("click", async () => {
+            try {
+                // Firebase 關燈 (這會觸發團員端自動斷線)
+                set(tourStatusRef, false);
+
+                // 停止 Agora
+                if (localAudioTrack) {
+                    localAudioTrack.stop();
+                    localAudioTrack.close();
+                }
+                await client.leave();
+
+                // 還原 UI
+                statusText.innerText = "狀態：⏹️ 已結束導覽";
+                pauseBtn.style.display = "none";
+                resumeBtn.style.display = "none";
+                endBtn.style.display = "none";
+                startBtn.style.display = "block";
+
+            } catch (error) {
+                console.error(error);
             }
         });
     </script>
