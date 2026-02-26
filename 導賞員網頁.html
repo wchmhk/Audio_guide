@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>導賞員專用介面</title>
+    <!-- 引入 Agora Web SDK -->
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; background-color: #f0f8ff; }
+        button { padding: 15px 30px; font-size: 20px; background-color: #ff4757; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        #status { margin-top: 20px; font-size: 18px; color: #333; }
+    </style>
+</head>
+<body>
+
+    <h1>🎙️ 導賞員廣播站</h1>
+    <button id="startBtn">開始導覽 (點擊開啟麥克風)</button>
+    <div id="status">狀態：尚未開始</div>
+
+    <script>
+        // 填入你的 App ID
+        const APP_ID = "c553229d8402445a9a5262d2d573161d";
+        const CHANNEL_NAME = "museum_tour_01"; // 你可以自訂房間名稱
+        const TOKEN = null; // 測試模式下填 null 即可
+
+        // 建立連線客戶端，設定為「直播模式」
+        const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+        let localAudioTrack;
+
+        document.getElementById("startBtn").addEventListener("click", async () => {
+            try {
+                // 1. 設定角色為主播 (host)
+                await client.setClientRole("host");
+
+                // 2. 加入房間
+                await client.join(APP_ID, CHANNEL_NAME, TOKEN, null);
+
+                // 3. 開啟麥克風收音
+                localAudioTrack = await AgoraRTC.createMicrophoneAudioTrack();
+
+                // 4. 將聲音發佈到房間給所有人聽
+                await client.publish([localAudioTrack]);
+
+                document.getElementById("status").innerText = "狀態：🟢 正在廣播中，請對著麥克風說話！";
+                document.getElementById("startBtn").disabled = true;
+                document.getElementById("startBtn").style.backgroundColor = "#2ed573";
+                document.getElementById("startBtn").innerText = "廣播進行中";
+
+            } catch (error) {
+                console.error("發生錯誤:", error);
+                alert("啟動失敗，請檢查主控台錯誤訊息。");
+            }
+        });
+    </script>
+</body>
+</html>

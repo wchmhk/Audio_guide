@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>團員收聽介面</title>
+    <!-- 引入 Agora Web SDK -->
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 50px; background-color: #fff9ed; }
+        button { padding: 15px 30px; font-size: 20px; background-color: #1e90ff; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        #status { margin-top: 20px; font-size: 18px; color: #333; }
+    </style>
+</head>
+<body>
+
+    <h1>🎧 導賞耳機接收端</h1>
+    <!-- 這個按鈕非常重要，必須點擊才能突破瀏覽器靜音限制 -->
+    <button id="joinBtn">點我加入導覽，開始收聽</button>
+    <div id="status">狀態：尚未加入</div>
+
+    <script>
+        const APP_ID = "c553229d8402445a9a5262d2d573161d";
+        const CHANNEL_NAME = "museum_tour_01"; // 必須跟導賞員的房間名稱一模一樣
+        const TOKEN = null;
+
+        const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+
+        // 設定監聽器：當房間內有人（導賞員）發佈聲音時，自動接收並播放
+        client.on("user-published", async (user, mediaType) => {
+            await client.subscribe(user, mediaType);
+            if (mediaType === "audio") {
+                // 自動播放聲音
+                user.audioTrack.play();
+                document.getElementById("status").innerText = "狀態：🔊 正在收聽導覽中...";
+            }
+        });
+
+        document.getElementById("joinBtn").addEventListener("click", async () => {
+            try {
+                // 1. 設定角色為觀眾 (audience)，這樣才不會去開啟使用者的麥克風
+                await client.setClientRole("audience");
+
+                // 2. 加入房間
+                await client.join(APP_ID, CHANNEL_NAME, TOKEN, null);
+
+                document.getElementById("status").innerText = "狀態：連線成功，等待導賞員說話...";
+                document.getElementById("joinBtn").disabled = true;
+                document.getElementById("joinBtn").style.backgroundColor = "#7bed9f";
+                document.getElementById("joinBtn").innerText = "已戴上耳機";
+
+            } catch (error) {
+                console.error("發生錯誤:", error);
+                alert("加入失敗，請檢查網路或 App ID。");
+            }
+        });
+    </script>
+</body>
+</html>
