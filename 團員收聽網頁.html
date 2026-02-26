@@ -4,56 +4,133 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>團員收聽介面</title>
-    <!-- 引入 Agora Web SDK -->
-    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
     <style>
-        body { font-family: sans-serif; text-align: center; padding: 50px; background-color: #fff9ed; }
-        button { padding: 15px 30px; font-size: 20px; background-color: #1e90ff; color: white; border: none; border-radius: 8px; cursor: pointer; }
-        #status { margin-top: 20px; font-size: 18px; color: #333; }
+        body { font-family: sans-serif; text-align: center; padding: 30px; background-color: #fff9ed; }
+        button { padding: 15px; font-size: 18px; color: white; border: none; border-radius: 8px; cursor: pointer; margin: 10px; width: 90%; max-width: 350px; }
+
+        #joinBtn { background-color: #bdc3c7; cursor: not-allowed; }
+        #joinBtn.active { background-color: #1e90ff; cursor: pointer; }
+
+        #leaveBtn { background-color: #ff6348; display: none; }
+        #status { margin-top: 20px; font-size: 18px; color: #333; font-weight: bold; }
+        .info-box { border: 1px solid #ddd; padding: 20px; border-radius: 10px; background: white; margin-top: 20px;}
     </style>
 </head>
 <body>
 
     <h1>🎧 導賞耳機接收端</h1>
-    <!-- 這個按鈕非常重要，必須點擊才能突破瀏覽器靜音限制 -->
-    <button id="joinBtn">點我加入導覽，開始收聽</button>
-    <div id="status">狀態：尚未加入</div>
 
-    <script>
-        const APP_ID = "c553229d8402445a9a5262d2d573161d";
-        const CHANNEL_NAME = "museum_tour_01"; // 必須跟導賞員的房間名稱一模一樣
-        const TOKEN = null;
+    <div class="info-box">
+        <div id="status">狀態：連線至訊號塔中...</div>
+        <hr>
+        <button id="joinBtn" disabled>⏳ 等待導賞員開機...</button>
+        <button id="leaveBtn">⏹️ 退出導覽</button>
+    </div>
+
+    <script src="https://download.agora.io/sdk/release/AgoraRTC_N.js"></script>
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        // Firebase 設定
+        const firebaseConfig = {
+          apiKey: "AIzaSyDMSZ5dOERrdwDhCcYozn_XbE-7T3Om3ss",
+          authDomain: "audio-guide-signal.firebaseapp.com",
+          databaseURL: "https://audio-guide-signal-default-rtdb.firebaseio.com",
+          projectId: "audio-guide-signal",
+          storageBucket: "audio-guide-signal.firebasestorage.app",
+          messagingSenderId: "173221122075",
+          appId: "1:173221122075:web:a8214abe2d2239a20028be",
+          measurementId: "G-NJ8SX0K49Q"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // Agora 設定
+        const APP_ID = "b9b887f6351c4b9ab067ba7778c6b280";
+        const CHANNEL_NAME = "museum_tour_01";
 
         const client = AgoraRTC.createClient({ mode: "live", codec: "vp8" });
+        const tourStatusRef = ref(db, 'tours/' + CHANNEL_NAME + '/isActive');
 
-        // 設定監聽器：當房間內有人（導賞員）發佈聲音時，自動接收並播放
+        const joinBtn = document.getElementById("joinBtn");
+        const leaveBtn = document.getElementById("leaveBtn");
+        const statusDiv = document.getElementById("status");
+
+        // 1. 監聽紅綠燈 (決定能否加入 / 強制退出)
+        onValue(tourStatusRef, async (snapshot) => {
+            const isActive = snapshot.val();
+
+            if (isActive === true) {
+                // 導賞員開機
+                if (joinBtn.style.display !== "none") {
+                    joinBtn.disabled = false;
+                    joinBtn.classList.add("active");
+                    joinBtn.innerText = "🔊 導賞員已開始，點我加入";
+                    statusDiv.innerText = "狀態：訊號良好，可以加入";
+                }
+            } else {
+                // 導賞員關機 (或結束) -> 強制踢人
+                joinBtn.disabled = true;
+                joinBtn.classList.remove("active");
+                joinBtn.innerText = "⏳ 等待導賞員開機...";
+
+                if (client.connectionState === "CONNECTED" || client.connectionState === "CONNECTING") {
+                    await client.leave();
+                    leaveBtn.style.display = "none";
+                    joinBtn.style.display = "inline-block";
+                    statusDiv.innerText = "狀態：導賞員已結束，自動斷線。";
+                    alert("導賞員已結束廣播，系統自動為您斷線。");
+                } else {
+                    statusDiv.innerText = "狀態：導賞員目前離線中";
+                }
+            }
+        });
+
+        // 2. 監聽聲音狀態 (包含是否靜音)
         client.on("user-published", async (user, mediaType) => {
             await client.subscribe(user, mediaType);
             if (mediaType === "audio") {
-                // 自動播放聲音
                 user.audioTrack.play();
-                document.getElementById("status").innerText = "狀態：🔊 正在收聽導覽中...";
+                statusDiv.innerText = "狀態：🔊 正在收聽導覽中...";
             }
         });
 
-        document.getElementById("joinBtn").addEventListener("click", async () => {
+        // 監聽導賞員是否按下「暫停麥克風」
+        client.on("user-info-updated", (uid, msg) => {
+            if (msg === "mute-audio") {
+                 statusDiv.innerText = "狀態：🤐 導賞員暫時靜音中...";
+                 statusDiv.style.color = "#ffa502";
+            } else if (msg === "unmute-audio") {
+                 statusDiv.innerText = "狀態：🔊 正在收聽導覽中...";
+                 statusDiv.style.color = "#333";
+            }
+        });
+
+        // 加入按鈕
+        joinBtn.addEventListener("click", async () => {
             try {
-                // 1. 設定角色為觀眾 (audience)，這樣才不會去開啟使用者的麥克風
                 await client.setClientRole("audience");
+                await client.join(APP_ID, CHANNEL_NAME, null, null);
 
-                // 2. 加入房間
-                await client.join(APP_ID, CHANNEL_NAME, TOKEN, null);
-
-                document.getElementById("status").innerText = "狀態：連線成功，等待導賞員說話...";
-                document.getElementById("joinBtn").disabled = true;
-                document.getElementById("joinBtn").style.backgroundColor = "#7bed9f";
-                document.getElementById("joinBtn").innerText = "已戴上耳機";
-
+                statusDiv.innerText = "狀態：🔊 正在收聽導覽中...";
+                joinBtn.style.display = "none";
+                leaveBtn.style.display = "inline-block";
             } catch (error) {
-                console.error("發生錯誤:", error);
-                alert("加入失敗，請檢查網路或 App ID。");
+                console.error(error);
+                alert("加入失敗，請重試");
             }
         });
+
+        // 退出按鈕 (手動)
+        leaveBtn.addEventListener("click", async () => {
+            await client.leave();
+            statusDiv.innerText = "狀態：已手動退出";
+            leaveBtn.style.display = "none";
+            joinBtn.style.display = "inline-block";
+        });
+
     </script>
 </body>
 </html>
